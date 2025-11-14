@@ -12,6 +12,19 @@
 #define RED "\033[31m"
 #define YELLOW "\033[33m"
 
+// Global to track previous display state
+char prevDisplay[GRID_ROWS][GRID_COLS];
+
+// Function to set cursor position
+void setCursorPosition(int x, int y) {
+    printf("\033[%d;%dH", y + 1, x + 1);
+}
+
+// Function to move cursor home
+void cursorHome() {
+    printf("\033[H");
+}
+
 // Structure to represent an enemy entity
 typedef struct {
     int x, y;
@@ -114,11 +127,16 @@ int main() {
     initializeEnemies();
     
     int timeCounter = 0;
+    int playerDead = 0; // Flag to track if player is dead
     
     while (1) {
         // Handle player input (arrow keys)
         if (_kbhit()) {
             int ch = _getch();
+            if (playerDead) {
+                // If player is dead and user presses any key, exit
+                break;
+            }
             if (ch == 'k' || ch == 'K') {
                 int enemyIdx = getAdjacentEnemy();
                 if (enemyIdx != -1) {
@@ -221,54 +239,84 @@ int main() {
         }
         
         // If all enemies are dead, player wins
-        if (allEnemiesDead) {
+        if (allEnemiesDead && !playerDead) {
             system("cls");
             printf("\n\n\t🎉 Congratulations! You have eliminated all enemies and won the game! 🎉\n");
             break;
         }
         
-        // Check for detection
-        int detected = 0;
-        for (int i = 0; i < enemyCount; i++) {
-            if (!enemies[i].isAlive) continue; // Dead enemies can't detect player
-            
-            int dx = 0, dy = 0;
-            if (enemies[i].dir == 0) dy = -1;
-            else if (enemies[i].dir == 1) dx = 1;
-            else if (enemies[i].dir == 2) dy = 1;
-            else dx = -1;
-            
-            for (int j = 1; j <= 3; j++) {
-                int nx = enemies[i].x + dx * j;
-                int ny = enemies[i].y + dy * j;
-                if (nx < 0 || nx >= GRID_COLS || ny < 0 || ny >= GRID_ROWS || 
-                    grid[ny][nx] == '-' || grid[ny][nx] == '|') break;
-                if (nx == playerX && ny == playerY) {
-                    detected = 1;
-                    break;
+        // Check for detection (only if player not already dead)
+        if (!playerDead) {
+            int detected = 0;
+            for (int i = 0; i < enemyCount; i++) {
+                if (!enemies[i].isAlive) continue; // Dead enemies can't detect player
+                
+                int dx = 0, dy = 0;
+                if (enemies[i].dir == 0) dy = -1;
+                else if (enemies[i].dir == 1) dx = 1;
+                else if (enemies[i].dir == 2) dy = 1;
+                else dx = -1;
+                
+                for (int j = 1; j <= 3; j++) {
+                    int nx = enemies[i].x + dx * j;
+                    int ny = enemies[i].y + dy * j;
+                    if (nx < 0 || nx >= GRID_COLS || ny < 0 || ny >= GRID_ROWS || 
+                        grid[ny][nx] == '-' || grid[ny][nx] == '|') break;
+                    if (nx == playerX && ny == playerY) {
+                        detected = 1;
+                        break;
+                    }
                 }
+                if (detected) break;
             }
-            if (detected) break;
-        }
-        
-        if (detected) {
-            printf("💀 You were spotted! Game Over!\n");
-            break;
+            
+            if (detected) {
+                playerDead = 1; // Mark player as dead but continue loop
+            }
         }
         
         // Redraw the grid
-        system("cls");
-        for (int i = 0; i < GRID_ROWS; i++) {
-            for (int j = 0; j < GRID_COLS; j++) {
-                char c = display[i][j];
-                if (j == playerX && i == playerY) printf("%s%c%s", BLUE, c, RESET);
-                else if (c == 'E') printf("%s%c%s", RED, c, RESET);
-                else if (c == '^' || c == '>' || c == 'v' || c == '<') printf("%s%c%s", YELLOW, c, RESET);
-                else printf("%c", c);
+        if (timeCounter == 0) {
+            // First frame: draw entire grid
+            system("cls");
+            cursorHome();
+            for (int i = 0; i < GRID_ROWS; i++) {
+                for (int j = 0; j < GRID_COLS; j++) {
+                    char c = display[i][j];
+                    if (j == playerX && i == playerY) printf("%s%c%s", BLUE, c, RESET);
+                    else if (c == 'E') printf("%s%c%s", RED, c, RESET);
+                    else if (c == '^' || c == '>' || c == 'v' || c == '<') printf("%s%c%s", YELLOW, c, RESET);
+                    else printf("%c", c);
+                }
+                printf("\n");
             }
-            printf("\n");
+            memcpy(prevDisplay, display, sizeof(display));
+        } else {
+            // Subsequent frames: only update changed cells
+            cursorHome();
+            for (int i = 0; i < GRID_ROWS; i++) {
+                for (int j = 0; j < GRID_COLS; j++) {
+                    if (display[i][j] != prevDisplay[i][j]) {
+                        setCursorPosition(j, i);
+                        char c = display[i][j];
+                        if (j == playerX && i == playerY) printf("%s%c%s", BLUE, c, RESET);
+                        else if (c == 'E') printf("%s%c%s", RED, c, RESET);
+                        else if (c == '^' || c == '>' || c == 'v' || c == '<') printf("%s%c%s", YELLOW, c, RESET);
+                        else printf("%c", c);
+                    }
+                }
+            }
+            memcpy(prevDisplay, display, sizeof(display));
         }
         
+        if (playerDead) {
+            setCursorPosition(0, GRID_ROWS);
+            printf("💀 You were spotted! Game Over!                    ");
+            setCursorPosition(0, GRID_ROWS + 1);
+            printf("Press any key to exit...                           ");
+        }
+        
+        fflush(stdout);
         // Wait a bit for smoother movement
         Sleep(100);
         timeCounter++;
